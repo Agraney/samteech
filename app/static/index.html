@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Samtech — Transformer Factory Insights & Q&A</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <!-- Chart.js for rich client-side visualizations -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body class="dark-theme">
+  <!-- Top Navigation Bar -->
+  <header class="top-nav">
+    <div class="nav-left">
+      <div class="logo-mark">⚡</div>
+      <div class="brand-info">
+        <h1>SAMTECH TRANSFORMER INSIGHTS</h1>
+        <p class="subtitle">Shop Floor Operations, Inventory & AI Intelligence</p>
+      </div>
+    </div>
+    
+    <div class="nav-center">
+      <div class="snapshot-selector-wrapper">
+        <span class="selector-label">SNAPSHOT:</span>
+        <select id="snapshotSelect" class="snapshot-select" onchange="loadSnapshot(this.value)">
+          <option value="">Loading snapshots...</option>
+        </select>
+      </div>
+      <div class="month-selector-wrapper">
+        <span class="selector-label">FILTER MONTH:</span>
+        <select id="monthSelect" class="month-select" onchange="changeSelectedMonth(this.value)">
+          <option value="ALL">All Months (Full FY)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <div id="aiStatusBadge" class="ai-badge local" onclick="openApiKeyModal()">
+        <span class="status-dot"></span>
+        <span id="aiStatusText">AI: Local Query Engine</span>
+      </div>
+      <button class="btn btn-primary" onclick="openUploadModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload .xlsm
+      </button>
+      <button class="btn btn-secondary icon-only" title="Refresh Dashboard" onclick="refreshDashboard()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-layout">
+    <!-- Executive KPI Strip -->
+    <section class="kpi-grid">
+      <div class="kpi-card" id="kpiStockVal">
+        <div class="kpi-header">
+          <span class="kpi-title">TOTAL STOCK VALUE</span>
+          <span class="kpi-icon">💰</span>
+        </div>
+        <div class="kpi-value" id="valStockTotal">₹0.00</div>
+        <div class="kpi-footer text-muted" id="subStockItems">0 materials tracked</div>
+      </div>
+
+      <div class="kpi-card alert-card" id="kpiAlerts" onclick="switchTab('inventory', 'alerts')">
+        <div class="kpi-header">
+          <span class="kpi-title">STOCK ALERTS</span>
+          <span class="kpi-icon">⚠️</span>
+        </div>
+        <div class="kpi-value warning-text" id="valStockAlerts">0</div>
+        <div class="kpi-footer" id="subStockAlerts">0 critical, 0 low stock</div>
+      </div>
+
+      <div class="kpi-card" id="kpiProduction">
+        <div class="kpi-header">
+          <span class="kpi-title">PRODUCTION THROUGHPUT</span>
+          <span class="kpi-icon">⚙️</span>
+        </div>
+        <div class="kpi-value" id="valProdTotal">0 units</div>
+        <div class="kpi-footer text-muted" id="subProdDispatched">0 units dispatched</div>
+      </div>
+
+      <div class="kpi-card" id="kpiQuality">
+        <div class="kpi-header">
+          <span class="kpi-title">TESTING PASS RATE</span>
+          <span class="kpi-icon">🛡️</span>
+        </div>
+        <div class="kpi-value success-text" id="valQualityRate">100%</div>
+        <div class="kpi-footer text-muted" id="subQualityCounts">0 passed / 0 failed</div>
+      </div>
+
+      <div class="kpi-card" id="kpiBottleneck">
+        <div class="kpi-header">
+          <span class="kpi-title">STAGE BOTTLENECK</span>
+          <span class="kpi-icon">⏱️</span>
+        </div>
+        <div class="kpi-value danger-text" id="valBottleneckSection">None</div>
+        <div class="kpi-footer text-muted" id="subBottleneckThroughput">Stage throughput: 0 units</div>
+      </div>
+    </section>
+
+    <!-- Executive Action Narrative Banner -->
+    <section class="narrative-banner" id="narrativeSection">
+      <div class="narrative-header">
+        <div class="narrative-badge" id="narrativeBadge">OPERATIONS STATUS</div>
+        <h2 id="narrativeHeadline">Analyzing latest shop floor workbook...</h2>
+      </div>
+      <ul class="narrative-bullets" id="narrativeBullets">
+        <li>Loading insights...</li>
+      </ul>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <nav class="content-tabs">
+      <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Overview & Flow
+      </button>
+      <button class="tab-btn" data-tab="monthly" onclick="switchTab('monthly')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Monthly Targets & Master
+      </button>
+      <button class="tab-btn" data-tab="finished" onclick="switchTab('finished')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        Finished Goods & Stock
+      </button>
+      <button class="tab-btn" data-tab="inventory" onclick="switchTab('inventory')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        Raw Materials
+      </button>
+      <button class="tab-btn" data-tab="production" onclick="switchTab('production')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Daily Production
+      </button>
+      <button class="tab-btn" data-tab="bom" onclick="switchTab('bom')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        BOM Specifications
+      </button>
+      <button class="tab-btn" data-tab="norms" onclick="switchTab('norms')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+        Consumption vs. Norms
+      </button>
+      <button class="tab-btn ai-tab" data-tab="assistant" onclick="switchTab('assistant')">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        AI Q&A Assistant
+      </button>
+    </nav>
+
+    <!-- TAB 1: OVERVIEW & FLOW -->
+    <div id="tab-overview" class="tab-pane active">
+      <div class="dashboard-grid">
+        <!-- Pipeline Flow Chart -->
+        <div class="card chart-card-large">
+          <div class="card-header">
+            <div>
+              <h3>Assembly Pipeline Throughput</h3>
+              <p class="card-sub">Units completed at each shop floor section (Bottleneck highlighted)</p>
+            </div>
+          </div>
+          <div class="chart-container" style="height: 320px;">
+            <canvas id="pipelineChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Testing Pass/Fail & Distribution -->
+        <div class="card chart-card-small">
+          <div class="card-header">
+            <div>
+              <h3>Quality Inspection</h3>
+              <p class="card-sub">Pass vs. Fail distribution</p>
+            </div>
+          </div>
+          <div class="chart-container" style="height: 240px; position: relative;">
+            <canvas id="qualityDonutChart"></canvas>
+          </div>
+          <div class="quality-stats-footer" id="qualityStatsLegend">
+            <!-- populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Movers Strip -->
+      <div class="dashboard-grid mt-4">
+        <div class="card">
+          <div class="card-header">
+            <h3>Top Issued Materials (Highest Velocity)</h3>
+            <span class="badge info">Consumption Volume</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table" id="tableTopIssued">
+              <thead>
+                <tr>
+                  <th>Rating</th>
+                  <th>Material</th>
+                  <th>Total Issued</th>
+                  <th>Closing Balance</th>
+                  <th>Est. Days Left</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Recent Restocks & Receipts</h3>
+            <span class="badge success">Inflow</span>
+          </div>
+          <div class="table-container">
+            <table class="data-table" id="tableTopReceived">
+              <thead>
+                <tr>
+                  <th>Rating</th>
+                  <th>Material</th>
+                  <th>Received Qty</th>
+                  <th>Closing Balance</th>
+                  <th>Unit Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" class="text-center text-muted">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: MONTHLY PERFORMANCE & TARGETS (PRODUCTION MASTER) -->
+    <div id="tab-monthly" class="tab-pane">
+      <!-- Monthly KPI strip -->
+      <div class="finished-stat-grid">
+        <div class="finished-stat-card blue">
+          <div class="finished-stat-icon">🎯</div>
+          <div>
+            <div class="finished-stat-val" id="valMonthlyTargetTotal">0</div>
+            <div class="finished-stat-label">Total Monthly Target</div>
+          </div>
+        </div>
+        <div class="finished-stat-card emerald">
+          <div class="finished-stat-icon">⚡</div>
+          <div>
+            <div class="finished-stat-val" id="valMonthlyActualTotal">0</div>
+            <div class="finished-stat-label">Total Monthly Actual</div>
+          </div>
+        </div>
+        <div class="finished-stat-card purple">
+          <div class="finished-stat-icon">📊</div>
+          <div>
+            <div class="finished-stat-val" id="valMonthlyVarianceTotal">0</div>
+            <div class="finished-stat-label">Net Variance (+/-)</div>
+          </div>
+        </div>
+        <div class="finished-stat-card">
+          <div class="finished-stat-icon">🏭</div>
+          <div>
+            <div class="finished-stat-val" id="valMonthlyFocusMonth">Sep 2026</div>
+            <div class="finished-stat-label">Active Focus Month</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monthly Throughput Chart -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <div>
+            <h3>Monthly Section Production Trends (FY 2026-27)</h3>
+            <p class="card-sub">Month-by-month actual output comparison across stages from PRODUCTION MASTER</p>
+          </div>
+          <span class="badge info">12-Month Timeline</span>
+        </div>
+        <div class="chart-container" style="height: 320px;">
+          <canvas id="monthlySectionChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Target vs. Actual Master Grid -->
+      <div class="card">
+        <div class="card-header filter-header">
+          <div>
+            <h3>Production Master: Targets, Actuals & Variance</h3>
+            <p class="card-sub">Shop floor targets vs. actual throughput across all sections and ratings</p>
+          </div>
+          <div class="search-filter-group">
+            <select id="monthlyTableMonthFilter" class="form-control" style="width: auto; padding: 6px 12px;" onchange="filterMonthlyTable()">
+              <option value="ALL">All Months & Yearly</option>
+            </select>
+            <select id="monthlyTableSectionFilter" class="form-control" style="width: auto; padding: 6px 12px;" onchange="filterMonthlyTable()">
+              <option value="ALL">All Sections</option>
+              <option value="HV WINDING">HV Winding</option>
+              <option value="LV WINDING">LV Winding</option>
+              <option value="CORE COIL ASSEMBLY">Core Coil Assembly</option>
+              <option value="TANKING">Tanking</option>
+              <option value="TESTING PASSED">Testing Passed</option>
+              <option value="TESTING FAILED">Testing Failed</option>
+              <option value="PAINTING">Painting</option>
+              <option value="DISPATCH">Dispatch</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-container large-table">
+          <table class="data-table" id="tableMonthlyTargets">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Section</th>
+                <th>Rating</th>
+                <th>Target Units</th>
+                <th>Actual Units</th>
+                <th>Variance</th>
+                <th>Fulfillment</th>
+              </tr>
+            </thead>
+            <tbody id="monthlyTableBody">
+              <tr><td colspan="7" class="text-center text-muted">Loading monthly targets...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: FINISHED GOODS & SUB-ASSEMBLY STOCK -->
+    <div id="tab-finished" class="tab-pane">
+      <!-- 4 Warehouse KPI widgets -->
+      <div class="finished-stat-grid">
+        <div class="finished-stat-card emerald">
+          <div class="finished-stat-icon">📦</div>
+          <div>
+            <div class="finished-stat-val" id="valFinTransformers">101</div>
+            <div class="finished-stat-label">Ready Finished Transformers</div>
+          </div>
+        </div>
+        <div class="finished-stat-card blue">
+          <div class="finished-stat-icon">⚙️</div>
+          <div>
+            <div class="finished-stat-val" id="valFinCCA">193</div>
+            <div class="finished-stat-label">Ready Core-Coil Assemblies</div>
+          </div>
+        </div>
+        <div class="finished-stat-card purple">
+          <div class="finished-stat-icon">🌀</div>
+          <div>
+            <div class="finished-stat-val" id="valFinHVCoils">753</div>
+            <div class="finished-stat-label">Finished HV Coils</div>
+          </div>
+        </div>
+        <div class="finished-stat-card">
+          <div class="finished-stat-icon">🔄</div>
+          <div>
+            <div class="finished-stat-val" id="valFinLVCoils">350</div>
+            <div class="finished-stat-label">Finished LV Coils</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warehouse Finished Stock Table -->
+      <div class="card">
+        <div class="card-header filter-header">
+          <div class="search-filter-group">
+            <div class="search-input-wrap">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="finishedSearch" placeholder="Search finished units, coils, CCAs..." oninput="filterFinishedGoodsTable()">
+            </div>
+            <div class="rating-filter-chips" id="finishedRatingChips">
+              <button class="chip active" data-rating="ALL" onclick="setFinishedRatingFilter('ALL')">All Ratings</button>
+              <button class="chip" data-rating="16KVA" onclick="setFinishedRatingFilter('16KVA')">16KVA</button>
+              <button class="chip" data-rating="25KVA" onclick="setFinishedRatingFilter('25KVA')">25KVA</button>
+              <button class="chip" data-rating="63KVA" onclick="setFinishedRatingFilter('63KVA')">63KVA</button>
+              <button class="chip" data-rating="100KVA" onclick="setFinishedRatingFilter('100KVA')">100KVA</button>
+              <button class="chip" data-rating="250KVA" onclick="setFinishedRatingFilter('250KVA')">250KVA</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-container large-table">
+          <table class="data-table" id="finishedGoodsTable">
+            <thead>
+              <tr>
+                <th>Rating</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Warehouse Sheet</th>
+                <th>Opening Bal</th>
+                <th>Received / Completed</th>
+                <th>Issued / Dispatched</th>
+                <th>Closing Ready Balance</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="finishedGoodsTableBody">
+              <tr><td colspan="9" class="text-center text-muted">Loading finished goods data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: INVENTORY & STOCK -->
+    <div id="tab-inventory" class="tab-pane">
+      <div class="card">
+        <div class="card-header filter-header">
+          <div class="search-filter-group">
+            <div class="search-input-wrap">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="stockSearch" placeholder="Search material name, size, type..." oninput="filterStockTable()">
+            </div>
+            <div class="rating-filter-chips" id="ratingChips">
+              <button class="chip active" data-rating="ALL" onclick="setRatingFilter('ALL')">All Ratings</button>
+              <button class="chip" data-rating="16KVA" onclick="setRatingFilter('16KVA')">16KVA</button>
+              <button class="chip" data-rating="25KVA" onclick="setRatingFilter('25KVA')">25KVA</button>
+              <button class="chip" data-rating="63KVA" onclick="setRatingFilter('63KVA')">63KVA</button>
+              <button class="chip" data-rating="100KVA" onclick="setRatingFilter('100KVA')">100KVA</button>
+              <button class="chip" data-rating="250KVA" onclick="setRatingFilter('250KVA')">250KVA</button>
+              <button class="chip" data-rating="COMMON" onclick="setRatingFilter('COMMON')">Common</button>
+            </div>
+          </div>
+          <div class="alert-toggle-group">
+            <label class="toggle-label">
+              <input type="checkbox" id="chkAlertsOnly" onchange="filterStockTable()">
+              <span class="custom-toggle"></span>
+              Alerts Only (&le;7d or Low)
+            </label>
+          </div>
+        </div>
+
+        <div class="table-container large-table">
+          <table class="data-table" id="stockMasterTable">
+            <thead>
+              <tr>
+                <th>Rating</th>
+                <th>Sheet</th>
+                <th>Material</th>
+                <th>Type & Size</th>
+                <th>Unit</th>
+                <th>Opening</th>
+                <th>Received</th>
+                <th>Issued</th>
+                <th>Closing Balance</th>
+                <th>Est. Run-Out</th>
+                <th>Rate (₹)</th>
+                <th>Total Value (₹)</th>
+                <th>Health</th>
+              </tr>
+            </thead>
+            <tbody id="stockTableBody">
+              <tr><td colspan="13" class="text-center text-muted">Loading inventory data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: PRODUCTION & SECTIONS -->
+    <div id="tab-production" class="tab-pane">
+      <div class="dashboard-grid">
+        <div class="card chart-card-large">
+          <div class="card-header">
+            <div>
+              <h3>Daily Factory Output Trend</h3>
+              <p class="card-sub">Daily units passing inspection vs total assembly</p>
+            </div>
+          </div>
+          <div class="chart-container" style="height: 320px;">
+            <canvas id="dailyTrendChart"></canvas>
+          </div>
+        </div>
+
+        <div class="card chart-card-small">
+          <div class="card-header">
+            <div>
+              <h3>Production by Rating</h3>
+              <p class="card-sub">Units produced per transformer rating</p>
+            </div>
+          </div>
+          <div class="chart-container" style="height: 320px;">
+            <canvas id="ratingBarChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: BOM DESIGN SPECIFICATIONS (CONSUMPTION SHEET) -->
+    <div id="tab-bom" class="tab-pane">
+      <div class="card">
+        <div class="card-header filter-header">
+          <div>
+            <h3>Bill of Materials (BOM) Technical Specifications</h3>
+            <p class="card-sub">Engineering material standards, strip sizes, and pieces per transformer rating from CONSUMPTION sheet</p>
+          </div>
+          <div class="search-filter-group">
+            <div class="search-input-wrap">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="bomSearch" placeholder="Search material, wire size, type..." oninput="filterBomTable()">
+            </div>
+            <div class="rating-filter-chips" id="bomRatingChips">
+              <button class="chip active" data-rating="ALL" onclick="setBomRatingFilter('ALL')">All Ratings</button>
+              <button class="chip" data-rating="16KVA" onclick="setBomRatingFilter('16KVA')">16KVA</button>
+              <button class="chip" data-rating="25KVA" onclick="setBomRatingFilter('25KVA')">25KVA</button>
+              <button class="chip" data-rating="63KVA" onclick="setBomRatingFilter('63KVA')">63KVA</button>
+              <button class="chip" data-rating="100KVA" onclick="setBomRatingFilter('100KVA')">100KVA</button>
+              <button class="chip" data-rating="250KVA" onclick="setBomRatingFilter('250KVA')">250KVA</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-container large-table">
+          <table class="data-table" id="bomSpecsTable">
+            <thead>
+              <tr>
+                <th>Rating</th>
+                <th>Material Description</th>
+                <th>Type</th>
+                <th>Conductor / Strip Size</th>
+                <th>Pieces</th>
+                <th>Qty / Coil</th>
+                <th>Qty / Transformer</th>
+                <th>Unit (UOM)</th>
+              </tr>
+            </thead>
+            <tbody id="bomSpecsTableBody">
+              <tr><td colspan="8" class="text-center text-muted">Loading BOM specifications...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: CONSUMPTION VS NORMS -->
+    <div id="tab-norms" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3>BOM Consumption Norms vs. Actual Issuance</h3>
+            <p class="card-sub">Compares actual material issued against expected standard consumption (Norm &times; Completed Units)</p>
+          </div>
+          <div id="normsSummaryBadge" class="badge warning">Evaluating Norms...</div>
+        </div>
+
+        <div class="table-container large-table">
+          <table class="data-table" id="normsTable">
+            <thead>
+              <tr>
+                <th>Rating</th>
+                <th>Material</th>
+                <th>Norm / Unit</th>
+                <th>Units Produced</th>
+                <th>Expected Qty</th>
+                <th>Actual Issued</th>
+                <th>Variance %</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="normsTableBody">
+              <tr><td colspan="8" class="text-center text-muted">Loading consumption norms...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: AI Q&A ASSISTANT -->
+    <div id="tab-assistant" class="tab-pane">
+      <div class="chat-container-card">
+        <div class="chat-header">
+          <div class="chat-header-info">
+            <h3>Shop Floor AI Assistant (Text-to-SQL)</h3>
+            <p class="card-sub">Ask any free-form question grounded directly in your factory's SQLite database</p>
+          </div>
+          <div class="chat-header-actions">
+            <button class="btn btn-sm btn-outline" onclick="clearChat()">Clear Chat</button>
+          </div>
+        </div>
+
+        <!-- Prompt suggestion chips -->
+        <div class="prompt-chips">
+          <span class="chips-label">Try asking:</span>
+          <button class="chip prompt-chip" onclick="askPreset('How much HV wire do we have left for 63KVA?')">
+            "How much HV wire left for 63KVA?"
+          </button>
+          <button class="chip prompt-chip" onclick="askPreset('Which section is behind this month?')">
+            "Which section is behind this month?"
+          </button>
+          <button class="chip prompt-chip" onclick="askPreset('What is our current oil balance?')">
+            "What is our oil balance?"
+          </button>
+          <button class="chip prompt-chip" onclick="askPreset('What materials are out of stock or low stock?')">
+            "What materials are low on stock?"
+          </button>
+          <button class="chip prompt-chip" onclick="askPreset('How did oil consumption change over the last 4 weeks?')">
+            "How did oil consumption change recently?"
+          </button>
+          <button class="chip prompt-chip" onclick="askPreset('What is our testing pass rate and how many failed?')">
+            "Testing pass vs. fail rate?"
+          </button>
+        </div>
+
+        <!-- Message history area -->
+        <div class="chat-messages" id="chatMessages">
+          <div class="message system-message">
+            <div class="msg-avatar">🤖</div>
+            <div class="msg-content">
+              <p>Hello! I am your <strong>Factory AI Analyst</strong>. I can answer questions about material balances, daily production output, stage bottlenecks, or consumption anomalies.</p>
+              <p class="text-muted text-sm mt-1">Every answer executes real SQL queries on your uploaded workbook so the numbers are guaranteed accurate.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div class="chat-input-bar">
+          <input type="text" id="chatInput" placeholder="Ask a question about inventory, production, or materials..." onkeydown="if(event.key === 'Enter') sendChatMessage()">
+          <button class="btn btn-primary" id="btnSendChat" onclick="sendChatMessage()">
+            <span>Send</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Upload Modal -->
+  <div class="modal-overlay" id="uploadModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Upload Shop Floor Workbook</h3>
+        <button class="btn-close" onclick="closeUploadModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <h4>Drop your .xlsm or .xlsx file here</h4>
+          <p class="text-muted">or click to browse from your computer</p>
+          <input type="file" id="fileInput" accept=".xlsm,.xlsx" style="display:none" onchange="handleFileSelect(event)">
+        </div>
+
+        <div id="selectedFileInfo" class="file-info-bar" style="display:none">
+          <span class="file-name" id="selectedFileName">filename.xlsm</span>
+          <span class="file-size" id="selectedFileSize">0 KB</span>
+        </div>
+
+        <div class="form-group mt-3">
+          <label for="uploadNotes">Snapshot Notes (Optional):</label>
+          <input type="text" id="uploadNotes" class="form-control" placeholder="e.g. End of Week 38 production run">
+        </div>
+
+        <div id="uploadProgressWrap" style="display:none" class="mt-3">
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="uploadProgressBar"></div>
+          </div>
+          <p class="text-sm text-muted mt-1 text-center" id="uploadStatusText">Parsing sheets and calculating insights...</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeUploadModal()">Cancel</button>
+        <button class="btn btn-primary" id="btnSubmitUpload" onclick="submitUpload()" disabled>Ingest & Analyze</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key Modal -->
+  <div class="modal-overlay" id="apiKeyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Configure Gemini AI Key</h3>
+        <button class="btn-close" onclick="closeApiKeyModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-muted mb-3">
+          Enter your Google Gemini API key to enable arbitrary natural language query synthesis and conversational summaries. If left blank, the app uses the built-in local SQL intent engine.
+        </p>
+        <div class="form-group">
+          <label for="inputGeminiKey">Gemini API Key:</label>
+          <input type="password" id="inputGeminiKey" class="form-control" placeholder="AIzaSy...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeApiKeyModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveGeminiKey()">Save Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

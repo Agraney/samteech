@@ -1,0 +1,64 @@
+import os
+from pathlib import Path
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.config import BASE_DIR, INCOMING_DIR
+from app.db import init_db
+from app.api.routes import router as api_router
+from app.ingestion.parser import WorkbookIngestor
+
+app = FastAPI(
+    title="Transformer Factory Insights & Q&A",
+    description="Operational analytics and AI assistant for transformer manufacturing",
+    version="1.0.0"
+)
+
+# Enable CORS for local cross-origin development if needed
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize database schema
+init_db()
+
+# Auto-ingest any pending workbooks in incoming folder
+def check_incoming_folder():
+    if INCOMING_DIR.exists():
+        for f in INCOMING_DIR.glob("*.xlsm"):
+            try:
+                print(f"Auto-ingesting incoming workbook: {f.name}")
+                ingestor = WorkbookIngestor(f, notes="Auto-ingested from incoming folder")
+                ingestor.parse_and_store()
+            except Exception as e:
+                print(f"Error auto-ingesting {f.name}: {e}")
+
+check_incoming_folder()
+
+# Include API routes
+app.include_router(api_router)
+
+# Mount static files
+static_dir = BASE_DIR / "app" / "static"
+static_dir.mkdir(parents=True, exist_ok=True)
+(static_dir / "css").mkdir(parents=True, exist_ok=True)
+(static_dir / "js").mkdir(parents=True, exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+@app.get("/")
+def serve_index():
+    index_file = static_dir / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"message": "Transformer Factory Insights API is running. UI loading..."}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
