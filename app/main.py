@@ -41,8 +41,36 @@ def check_incoming_folder():
 
 check_incoming_folder()
 
+# Auto-seed initial factory workbook if database has no snapshots (critical for ephemeral Render deployments)
+def ensure_initial_data():
+    from app.db import query_one
+    try:
+        snap_count = query_one("SELECT COUNT(*) as cnt FROM snapshots")
+        if not snap_count or snap_count["cnt"] == 0:
+            candidates = [
+                BASE_DIR / "MATERIAL PRODUCTION DATA WORKING 20.9.26.xlsm",
+                BASE_DIR / "data" / "uploads" / "MATERIAL PRODUCTION DATA WORKING 20.9.26.xlsm",
+                BASE_DIR / "data" / "sample_factory_data.xlsm",
+            ]
+            for c in candidates:
+                if c.exists():
+                    print(f"No existing snapshots found. Auto-seeding initial workbook: {c.name}...")
+                    ingestor = WorkbookIngestor(c, notes="Initial seed snapshot on deploy")
+                    ingestor.parse_and_store()
+                    print(f"Successfully seeded snapshot from {c.name}")
+                    break
+    except Exception as e:
+        print(f"Warning during initial data check: {e}")
+
+ensure_initial_data()
+
 # Include API routes
 app.include_router(api_router)
+
+# Health check route for Render / uptime monitors
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "samtech-factory-intelligence"}
 
 # Mount static files
 static_dir = BASE_DIR / "app" / "static"
@@ -61,4 +89,6 @@ def serve_index():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app.main:app", host=host, port=port)

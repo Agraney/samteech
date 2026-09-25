@@ -39,11 +39,18 @@ def update_gemini_key(payload: ApiKeyUpdate):
         raise HTTPException(status_code=400, detail="API key cannot be empty")
         
     os.environ["GEMINI_API_KEY"] = key
-    env_file = BASE_DIR / ".env"
-    with open(env_file, "a") as f:
-        f.write(f"\nGEMINI_API_KEY={key}\n")
+    try:
+        env_file = BASE_DIR / ".env"
+        with open(env_file, "a") as f:
+            f.write(f"\nGEMINI_API_KEY={key}\n")
+    except Exception as e:
+        print(f"Note: Could not append to .env on ephemeral/container filesystem: {e}")
         
-    return {"status": "success", "message": "Gemini API key configured successfully"}
+    return {"status": "success", "message": "Gemini API key configured successfully in session"}
+
+@router.get("/health")
+def api_health():
+    return {"status": "ok", "service": "samtech-factory-intelligence"}
 
 @router.get("/snapshots")
 def get_snapshots():
@@ -170,8 +177,8 @@ def list_materials(
             sms.value,
             sms.issued_qty,
             sms.closing_balance
-        FROM materials m
-        LEFT JOIN stock_master_snapshots sms ON m.id = sms.material_id AND sms.snapshot_id = ?
+        FROM stock_master_snapshots sms
+        JOIN materials m ON m.id = sms.material_id
         {where_clause}
         ORDER BY m.rating, m.material_name
         """,

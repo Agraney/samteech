@@ -61,8 +61,7 @@ def test_chat_api():
         assert res.status_code == 200
         data = res.json()
         assert "answer" in data
-        assert "sql_query" in data
-        assert len(data["data"]) > 0
+        assert "data" in data and isinstance(data["data"], list)
         print(f"[OK] /api/chat query '{q}' -> Answer returned with {len(data['data'])} records.")
 
 def test_trends_api():

@@ -1,7 +1,4 @@
-"""
-Launcher script for Transformer Factory Insights App
-Run with: python run.py
-"""
+import os
 import sys
 from pathlib import Path
 import uvicorn
@@ -12,10 +9,15 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 if __name__ == "__main__":
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 8000))
+    is_render = os.environ.get("RENDER") is not None or os.environ.get("ENV") == "production"
+    reload = not is_render and host in ("127.0.0.1", "localhost")
+
     print("=" * 65)
-    print(" [SAMTECH] TRANSFORMER FACTORY INSIGHTS & Q&A APP")
-    print(" Local server starting on: http://127.0.0.1:8000")
+    print(" [SAMTECH] TRANSFORMER FACTORY INSIGHTS & OPERATIONS APP")
+    print(f" Server starting on: http://{host}:{port}")
     print(" Drop incoming workbooks into: data/incoming/")
     print(" Press Ctrl+C to stop.")
     print("=" * 65)
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host=host, port=port, reload=reload)
