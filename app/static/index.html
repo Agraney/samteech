@@ -7,9 +7,14 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/styles.css">
-  <!-- Chart.js for rich client-side visualizations -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/styles.css?v=2.2.2">
+  <!-- Local Chart.js bundle with CDN fallback -->
+  <script src="/static/js/chart.umd.min.js?v=2.2.2"></script>
+  <script>
+    if (typeof Chart === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"><\/script>');
+    }
+  </script>
 </head>
 <body class="dark-theme">
   <!-- Top Navigation Bar -->
@@ -104,6 +109,7 @@
         </div>
         <div class="kpi-value" id="valProdTotal">0 units</div>
         <div class="kpi-footer text-muted" id="subProdStages">7 shop floor stages</div>
+        <span id="subProdDispatched" style="display:none"></span>
       </div>
 
       <!-- 4. Dispatch Output -->
@@ -1139,6 +1145,14 @@
     </div>
   </div>
 
-  <script src="/static/js/app.js"></script>
+  <!-- Legacy fallback elements to avoid null crashes if an older cached script runs in browser -->
+  <div id="legacy-cache-fallback" style="display:none;" aria-hidden="true">
+    <span id="subProdDispatched"></span>
+    <canvas id="ratingBarChart"></canvas>
+    <table id="tableTopIssued"><tbody></tbody></table>
+    <table id="tableTopReceived"><tbody></tbody></table>
+  </div>
+
+  <script src="/static/js/app.js?v=2.2.2"></script>
 </body>
 </html>

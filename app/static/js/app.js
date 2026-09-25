@@ -41,6 +41,33 @@ function formatINR(val) {
 }
 
 // ---------------------------------------------------------------------------
+// Safe DOM helpers to eliminate null reference errors across browsers and caches
+// ---------------------------------------------------------------------------
+function safeSetText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = (val !== null && val !== undefined) ? val : '';
+  return el;
+}
+
+function safeSetHtml(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = (html !== null && html !== undefined) ? html : '';
+  return el;
+}
+
+function safeSetStyle(id, prop, val) {
+  const el = document.getElementById(id);
+  if (el && el.style) el.style[prop] = val;
+  return el;
+}
+
+function safeSetValue(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = (val !== null && val !== undefined) ? val : '';
+  return el;
+}
+
+// ---------------------------------------------------------------------------
 // Config & Snapshot Selection
 // ---------------------------------------------------------------------------
 async function checkConfig() {
@@ -48,13 +75,14 @@ async function checkConfig() {
     const res = await fetch('/api/config');
     const data = await res.json();
     const badge = document.getElementById('aiStatusBadge');
-    const badgeText = document.getElementById('aiStatusText');
-    if (data.has_gemini_key) {
-      badge.classList.remove('local');
-      badgeText.textContent = 'AI: Gemini Connected';
-    } else {
-      badge.classList.add('local');
-      badgeText.textContent = 'AI: Local SQL Engine (Click for Key)';
+    if (badge) {
+      if (data.has_gemini_key) {
+        badge.classList.remove('local');
+        safeSetText('aiStatusText', 'AI: Gemini Connected');
+      } else {
+        badge.classList.add('local');
+        safeSetText('aiStatusText', 'AI: Local SQL Engine (Click for Key)');
+      }
     }
   } catch (err) {
     console.error('Error checking config:', err);
@@ -64,13 +92,16 @@ async function checkConfig() {
 async function loadSnapshotsList() {
   try {
     const res = await fetch('/api/snapshots');
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
     const data = await res.json();
     const select = document.getElementById('snapshotSelect');
-    select.innerHTML = '';
+    if (select) select.innerHTML = '';
 
     if (!data.snapshots || data.snapshots.length === 0) {
-      select.innerHTML = '<option value="">No snapshots uploaded yet</option>';
-      renderEmptyState();
+      if (select) select.innerHTML = '<option value="">No snapshots uploaded yet</option>';
+      renderEmptyState('No snapshots found in database. Please upload your workbook.');
       return;
     }
 
@@ -85,7 +116,7 @@ async function loadSnapshotsList() {
       } else if (snap.id === currentSnapshotId) {
         opt.selected = true;
       }
-      select.appendChild(opt);
+      if (select) select.appendChild(opt);
     });
 
     if (currentSnapshotId) {
@@ -93,6 +124,7 @@ async function loadSnapshotsList() {
     }
   } catch (err) {
     console.error('Error loading snapshots:', err);
+    renderEmptyState('Connection issue loading snapshots: ' + err.message);
   }
 }
 
@@ -110,16 +142,20 @@ async function loadSnapshot(snapshotId, month = null, rating = null) {
     const monthQuery = currentSelectedMonth ? `&month=${encodeURIComponent(currentSelectedMonth)}` : '';
     const ratingQuery = currentSelectedRating ? `&rating=${encodeURIComponent(currentSelectedRating)}` : '';
     const res = await fetch(`/api/insights/dashboard?snapshot_id=${currentSnapshotId}${monthQuery}${ratingQuery}`);
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
     const data = await res.json();
 
     if (data.has_data) {
       currentDashboardData = data;
       renderDashboard(data);
     } else {
-      renderEmptyState();
+      renderEmptyState(data.error || 'No operational data found for this snapshot.');
     }
   } catch (err) {
     console.error('Error loading dashboard data:', err);
+    renderEmptyState('Failed to load dashboard insights: ' + err.message);
   }
 }
 
@@ -192,90 +228,111 @@ function renderDashboard(data) {
     });
   }
 
-  // 1. Executive KPI Strip (7 Factory Metrics)
-  document.getElementById('valStockTotal').textContent = formatINR(stock.total_value);
-  document.getElementById('subStockItems').textContent = `${stock.total_items || 0} materials tracked`;
+  // 1. Executive KPI Strip (7 Factory Metrics) - crash-proof with safeSetText
+  try {
+    safeSetText('valStockTotal', formatINR(stock.total_value));
+    safeSetText('subStockItems', `${stock.total_items || 0} materials tracked`);
 
-  const totalAlerts = (stock.zero_stock_count || 0) + (stock.low_stock_count || 0);
-  document.getElementById('valStockAlerts').textContent = totalAlerts;
-  document.getElementById('subStockAlerts').textContent = `${stock.zero_stock_count || 0} out-of-stock, ${stock.low_stock_count || 0} low-stock`;
+    const totalAlerts = (stock.zero_stock_count || 0) + (stock.low_stock_count || 0);
+    safeSetText('valStockAlerts', totalAlerts);
+    safeSetText('subStockAlerts', `${stock.zero_stock_count || 0} out-of-stock, ${stock.low_stock_count || 0} low-stock`);
 
-  const totalProd = Math.round(prod.total_produced_units || 0);
-  document.getElementById('valProdTotal').textContent = `${totalProd.toLocaleString()} units`;
-  document.getElementById('subProdStages').textContent = `Period: ${data.selected_month === 'ALL' ? 'Full FY' : data.selected_month}`;
+    const totalProd = Math.round(prod.total_produced_units || 0);
+    safeSetText('valProdTotal', `${totalProd.toLocaleString()} units`);
+    safeSetText('subProdStages', `Period: ${data.selected_month === 'ALL' ? 'Full FY' : data.selected_month}`);
+    // Backward compatibility for older cached scripts / DOM elements
+    safeSetText('subProdDispatched', `${Math.round(prod.total_dispatched || 0)} units dispatched`);
 
-  const totalDispatch = Math.round(prod.total_dispatched || 0);
-  document.getElementById('valDispatchTotal').textContent = `${totalDispatch.toLocaleString()} units`;
-  document.getElementById('subDispatchUnits').textContent = 'Final factory shipment';
+    const totalDispatch = Math.round(prod.total_dispatched || 0);
+    safeSetText('valDispatchTotal', `${totalDispatch.toLocaleString()} units`);
+    safeSetText('subDispatchUnits', 'Final factory shipment');
 
-  document.getElementById('valQualityRate').textContent = `${quality.pass_rate_pct || 100}%`;
-  document.getElementById('subQualityCounts').textContent = `${Math.round(quality.passed || 0)} passed / ${Math.round(quality.failed || 0)} failed`;
+    safeSetText('valQualityRate', `${quality.pass_rate_pct || 100}%`);
+    safeSetText('subQualityCounts', `${Math.round(quality.passed || 0)} passed / ${Math.round(quality.failed || 0)} failed`);
 
-  const totalBufferWip = (wip.physical_buffers || []).reduce((acc, b) => acc + (b.units || 0), 0);
-  document.getElementById('valWipTotal').textContent = `${Math.round(totalBufferWip).toLocaleString()} units`;
-  document.getElementById('subWipDetail').textContent = 'Physical sub-assembly buffer';
+    const totalBufferWip = (wip.physical_buffers || []).reduce((acc, b) => acc + (b.units || 0), 0);
+    safeSetText('valWipTotal', `${Math.round(totalBufferWip).toLocaleString()} units`);
+    safeSetText('subWipDetail', 'Physical sub-assembly buffer');
 
-  const bneck = prod.bottleneck || wip.bottleneck || {};
-  document.getElementById('valBottleneckSection').textContent = bneck.stage || bneck.section || 'None';
-  document.getElementById('subBottleneckThroughput').textContent = bneck.accumulated_before 
-    ? `${bneck.accumulated_before} units accumulated`
-    : `Stage throughput: ${Math.round(bneck.throughput || 0)} units`;
-
-  // 2. Executive Action Narrative Banner
-  document.getElementById('narrativeHeadline').textContent = exec.headline || 'Analyzing operations...';
-  const badge = document.getElementById('narrativeBadge');
-  if (exec.action_required) {
-    badge.className = 'narrative-badge badge danger';
-    badge.textContent = 'ATTENTION REQUIRED';
-  } else {
-    badge.className = 'narrative-badge badge success';
-    badge.textContent = 'HEALTHY OPERATIONS';
+    const bneck = prod.bottleneck || wip.bottleneck || {};
+    safeSetText('valBottleneckSection', bneck.stage || bneck.section || 'None');
+    safeSetText('subBottleneckThroughput', bneck.accumulated_before 
+      ? `${bneck.accumulated_before} units accumulated`
+      : `Stage throughput: ${Math.round(bneck.throughput || 0)} units`);
+  } catch (err) {
+    console.error('Error updating KPI strip:', err);
   }
 
-  const bulletsList = document.getElementById('narrativeBullets');
-  bulletsList.innerHTML = '';
-  (exec.bullets || []).forEach(b => {
-    const li = document.createElement('li');
-    li.textContent = b;
-    bulletsList.appendChild(li);
-  });
+  // 2. Executive Action Narrative Banner
+  try {
+    safeSetText('narrativeHeadline', exec.headline || 'Analyzing operations...');
+    const badge = document.getElementById('narrativeBadge');
+    if (badge) {
+      if (exec.action_required) {
+        badge.className = 'narrative-badge badge danger';
+        badge.textContent = 'ATTENTION REQUIRED';
+      } else {
+        badge.className = 'narrative-badge badge success';
+        badge.textContent = 'HEALTHY OPERATIONS';
+      }
+    }
+
+    const bulletsList = document.getElementById('narrativeBullets');
+    if (bulletsList) {
+      bulletsList.innerHTML = '';
+      (exec.bullets || []).forEach(b => {
+        const li = document.createElement('li');
+        li.textContent = b;
+        bulletsList.appendChild(li);
+      });
+    }
+  } catch (err) {
+    console.error('Error updating narrative:', err);
+  }
 
   // 3. Tab 1: Factory Control Room Components
-  renderManufacturingFlow(flow, data.selected_month);
-  renderDailyBrief(dailyBrief, stock, prod, quality);
-  renderRatingsMatrix(ratingsMatrix);
+  try { renderManufacturingFlow(flow, data.selected_month); } catch (e) { console.error('Error in renderManufacturingFlow:', e); }
+  try { renderDailyBrief(dailyBrief, stock, prod, quality); } catch (e) { console.error('Error in renderDailyBrief:', e); }
+  try { renderRatingsMatrix(ratingsMatrix); } catch (e) { console.error('Error in renderRatingsMatrix:', e); }
 
   // 4. Tab 2: Production Flow Tab
-  renderFlowStagesTable(flow);
-  renderPipelineChart(flow, bneck.stage || bneck.section);
-  renderDailyTrendChart(prod.daily_trends || []);
+  try { renderFlowStagesTable(flow); } catch (e) { console.error('Error in renderFlowStagesTable:', e); }
+  try { renderPipelineChart(flow, bneck.stage || bneck.section); } catch (e) { console.error('Error in renderPipelineChart:', e); }
+  try { renderDailyTrendChart(prod.daily_trends || []); } catch (e) { console.error('Error in renderDailyTrendChart:', e); }
 
   // 5. Tab 3: WIP & Bottlenecks Tab
-  renderWipAndBottlenecks(wip);
+  try { renderWipAndBottlenecks(wip); } catch (e) { console.error('Error in renderWipAndBottlenecks:', e); }
 
   // 6. Tab 4: Material Readiness Tab
-  renderMaterialReadiness(readiness);
+  try { renderMaterialReadiness(readiness); } catch (e) { console.error('Error in renderMaterialReadiness:', e); }
 
   // 7. Tab 5: Finished Goods & Sourcing Tab
-  renderFinishedGoods(fg, outsourcing);
+  try { renderFinishedGoods(fg, outsourcing); } catch (e) { console.error('Error in renderFinishedGoods:', e); }
 
   // 8. Tab 6: Raw Materials Inventory Tab
-  stockItemsAll = stock.all_items || [];
-  filterStockTable();
+  try { stockItemsAll = stock.all_items || []; filterStockTable(); } catch (e) { console.error('Error in filterStockTable:', e); }
 
   // 9. Tab 7: Targets & Performance Tab
-  renderTargetsTab(mStats, data.selected_month, data.available_months);
+  try { renderTargetsTab(mStats, data.selected_month, data.available_months); } catch (e) { console.error('Error in renderTargetsTab:', e); }
 
   // 10. Tab 8: Quality Inspection Tab
-  renderQualityTab(quality);
+  try { renderQualityTab(quality); } catch (e) { console.error('Error in renderQualityTab:', e); }
 
   // 11. Tab 9: Consumption & BOM Tab
-  renderConsumptionTab(cons, data.bom_specs);
+  try { renderConsumptionTab(cons, data.bom_specs); } catch (e) { console.error('Error in renderConsumptionTab:', e); }
 }
 
-function renderEmptyState() {
-  document.getElementById('narrativeHeadline').textContent = 'No workbook data loaded';
-  document.getElementById('narrativeBullets').innerHTML = '<li>Please upload your factory .xlsm workbook to view insights.</li>';
+function renderEmptyState(message = 'No workbook data loaded') {
+  const headline = document.getElementById('narrativeHeadline');
+  if (headline) headline.textContent = message;
+  const bullets = document.getElementById('narrativeBullets');
+  if (bullets) bullets.innerHTML = '<li>Please upload your factory .xlsm workbook to view insights.</li>';
+
+  const emptyRow = '<tr><td colspan="13" class="text-center text-muted" style="padding: 1.5rem;">No data loaded for this snapshot. Please upload an operational workbook.</td></tr>';
+  ['ratingsMatrixBody', 'flowStagesBody', 'wipAccumulationBody', 'readinessTableBody', 'finishedTableBody', 'stockTableBody', 'monthlyTableBody', 'qualityTableBody', 'normsTableBody', 'bomTableBody'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = emptyRow;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -512,101 +569,119 @@ function renderFlowStagesTable(stages) {
 function renderPipelineChart(flowStages, bottleneckName) {
   const canvas = document.getElementById('pipelineChart');
   if (!canvas) return;
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not loaded, skipping pipeline chart');
+    return;
+  }
   const ctx = canvas.getContext('2d');
-  if (charts.pipeline) charts.pipeline.destroy();
+  if (!ctx) return;
+  try {
+    if (charts.pipeline) charts.pipeline.destroy();
 
-  const labels = flowStages.map(s => s.stage_name || s[0]);
-  const data = flowStages.map(s => Math.round(s.output !== undefined ? s.output : s[1]));
-  const backgroundColors = flowStages.map(s => {
-    const name = s.stage_name || s[0];
-    return name === bottleneckName ? 'rgba(244, 63, 94, 0.85)' : 'rgba(0, 240, 255, 0.75)';
-  });
-  const borderColors = flowStages.map(s => {
-    const name = s.stage_name || s[0];
-    return name === bottleneckName ? '#f43f5e' : '#00f0ff';
-  });
+    const labels = flowStages.map(s => s.stage_name || s[0]);
+    const data = flowStages.map(s => Math.round(s.output !== undefined ? s.output : s[1]));
+    const backgroundColors = flowStages.map(s => {
+      const name = s.stage_name || s[0];
+      return name === bottleneckName ? 'rgba(244, 63, 94, 0.85)' : 'rgba(0, 240, 255, 0.75)';
+    });
+    const borderColors = flowStages.map(s => {
+      const name = s.stage_name || s[0];
+      return name === bottleneckName ? '#f43f5e' : '#00f0ff';
+    });
 
-  charts.pipeline = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Units Completed',
-        data: data,
-        backgroundColor: backgroundColors,
-        borderColor: borderColors,
-        borderWidth: 1.5,
-        borderRadius: 6
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.raw} units completed ${ctx.label === bottleneckName ? '(BOTTLENECK)' : ''}`
+    charts.pipeline = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Units Completed',
+          data: data,
+          backgroundColor: backgroundColors,
+          borderColor: borderColors,
+          borderWidth: 1.5,
+          borderRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.raw} units completed ${ctx.label === bottleneckName ? '(BOTTLENECK)' : ''}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#9ca3af', font: { size: 10 } }
+          },
+          y: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#9ca3af', font: { size: 10 } }
           }
         }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: '#9ca3af', font: { size: 10 } }
-        },
-        y: {
-          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          ticks: { color: '#9ca3af', font: { size: 10 } }
-        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.error('Error in renderPipelineChart:', err);
+  }
 }
 
 function renderDailyTrendChart(dailyTrends) {
   const canvas = document.getElementById('dailyTrendChart');
   if (!canvas) return;
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not loaded, skipping daily trend chart');
+    return;
+  }
   const ctx = canvas.getContext('2d');
-  if (charts.dailyTrend) charts.dailyTrend.destroy();
+  if (!ctx) return;
+  try {
+    if (charts.dailyTrend) charts.dailyTrend.destroy();
 
-  const labels = dailyTrends.map(d => d.date);
-  const data = dailyTrends.map(d => d.total_daily_units);
+    const labels = dailyTrends.map(d => d.date);
+    const data = dailyTrends.map(d => d.total_daily_units);
 
-  charts.dailyTrend = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: 'Daily Output Units',
-        data: data,
-        borderColor: '#00f0ff',
-        backgroundColor: 'rgba(0, 240, 255, 0.1)',
-        borderWidth: 2.5,
-        fill: true,
-        tension: 0.3,
-        pointBackgroundColor: '#00f0ff',
-        pointRadius: 3
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 45 }
-        },
-        y: {
-          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          ticks: { color: '#9ca3af', font: { size: 10 } }
-        }
+    charts.dailyTrend = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Daily Output Units',
+          data: data,
+          borderColor: '#00f0ff',
+          backgroundColor: 'rgba(0, 240, 255, 0.1)',
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: '#00f0ff',
+          pointRadius: 3
+        }]
       },
-      plugins: {
-        legend: { display: false }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#9ca3af', font: { size: 10 }, maxRotation: 45 }
+          },
+          y: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#9ca3af', font: { size: 10 } }
+          }
+        },
+        plugins: {
+          legend: { display: false }
+        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.error('Error in renderDailyTrendChart:', err);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -657,10 +732,10 @@ function renderWipAndBottlenecks(wip) {
       bufferList.innerHTML += `
         <div class="buffer-stock-item">
           <div>
-            <div class="buffer-stock-name">${b.buffer_name}</div>
-            <div class="text-xs text-muted">Source: <code>${b.sheet_pattern}</code></div>
+            <div class="buffer-stock-name">${b.stage || b.buffer_name}</div>
+            <div class="text-xs text-muted">Source: <code>${b.lineage || b.sheet_pattern || 'Inventory Master'}</code></div>
           </div>
-          <div class="buffer-stock-val">${Math.round(b.units || 0).toLocaleString()} units</div>
+          <div class="buffer-stock-val">${Math.round(b.units || 0).toLocaleString()} ${b.unit_type || 'units'}</div>
         </div>
       `;
     });
@@ -795,24 +870,24 @@ function renderFinishedGoods(fg, outsourcing) {
   // Sourcing Split
   if (outsourcing.transformers) {
     const tr = outsourcing.transformers;
-    document.getElementById('txtInhouseTR').textContent = Math.round(tr.in_house_units || 0);
-    document.getElementById('pctInhouseTR').textContent = `${tr.in_house_pct || 100}%`;
-    document.getElementById('txtOutsourcedTR').textContent = Math.round(tr.outsourced_units || 0);
-    document.getElementById('pctOutsourcedTR').textContent = `${tr.outsourced_pct || 0}%`;
+    safeSetText('txtInhouseTR', Math.round(tr.in_house_units || 0));
+    safeSetText('pctInhouseTR', `${tr.in_house_pct || 100}%`);
+    safeSetText('txtOutsourcedTR', Math.round(tr.outsourced_units || 0));
+    safeSetText('pctOutsourcedTR', `${tr.outsourced_pct || 0}%`);
 
-    document.getElementById('barInhouseTR').style.width = `${tr.in_house_pct || 100}%`;
-    document.getElementById('barOutsourcedTR').style.width = `${tr.outsourced_pct || 0}%`;
+    safeSetStyle('barInhouseTR', 'width', `${tr.in_house_pct || 100}%`);
+    safeSetStyle('barOutsourcedTR', 'width', `${tr.outsourced_pct || 0}%`);
   }
 
   if (outsourcing.cca) {
     const cca = outsourcing.cca;
-    document.getElementById('txtInhouseCCA').textContent = Math.round(cca.in_house_units || 0);
-    document.getElementById('pctInhouseCCA').textContent = `${cca.in_house_pct || 100}%`;
-    document.getElementById('txtOutsourcedCCA').textContent = Math.round(cca.outsourced_units || 0);
-    document.getElementById('pctOutsourcedCCA').textContent = `${cca.outsourced_pct || 0}%`;
+    safeSetText('txtInhouseCCA', Math.round(cca.in_house_units || 0));
+    safeSetText('pctInhouseCCA', `${cca.in_house_pct || 100}%`);
+    safeSetText('txtOutsourcedCCA', Math.round(cca.outsourced_units || 0));
+    safeSetText('pctOutsourcedCCA', `${cca.outsourced_pct || 0}%`);
 
-    document.getElementById('barInhouseCCA').style.width = `${cca.in_house_pct || 100}%`;
-    document.getElementById('barOutsourcedCCA').style.width = `${cca.outsourced_pct || 0}%`;
+    safeSetStyle('barInhouseCCA', 'width', `${cca.in_house_pct || 100}%`);
+    safeSetStyle('barOutsourcedCCA', 'width', `${cca.outsourced_pct || 0}%`);
   }
 
   finishedGoodsAll = [
@@ -1017,66 +1092,74 @@ function renderTargetsTab(mStats, selectedMonth, availableMonths) {
 function renderMonthlySectionChart(monthlyStats) {
   const canvas = document.getElementById('monthlySectionChart');
   if (!canvas) return;
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not loaded, skipping monthly section chart');
+    return;
+  }
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  if (charts.monthlySection) charts.monthlySection.destroy();
+  try {
+    if (charts.monthlySection) charts.monthlySection.destroy();
 
-  const fyMonths = (monthlyStats.fy_months || []).filter(m => m !== 'YEARLY');
-  const sectionSummary = monthlyStats.section_summary || {};
+    const fyMonths = (monthlyStats.fy_months || []).filter(m => m !== 'YEARLY');
+    const sectionSummary = monthlyStats.section_summary || {};
 
-  const stages = [
-    { name: 'HV WINDING', color: 'rgba(0, 240, 255, 0.85)' },
-    { name: 'LV WINDING', color: 'rgba(59, 130, 246, 0.85)' },
-    { name: 'CORE COIL ASSEMBLY', color: 'rgba(139, 92, 246, 0.85)' },
-    { name: 'TANKING', color: 'rgba(245, 158, 11, 0.85)' },
-    { name: 'TESTING PASSED', color: 'rgba(16, 185, 129, 0.85)' }
-  ];
+    const stages = [
+      { name: 'HV WINDING', color: 'rgba(0, 240, 255, 0.85)' },
+      { name: 'LV WINDING', color: 'rgba(59, 130, 246, 0.85)' },
+      { name: 'CORE COIL ASSEMBLY', color: 'rgba(139, 92, 246, 0.85)' },
+      { name: 'TANKING', color: 'rgba(245, 158, 11, 0.85)' },
+      { name: 'TESTING PASSED', color: 'rgba(16, 185, 129, 0.85)' }
+    ];
 
-  const datasets = stages.map(st => {
-    const dataPoints = fyMonths.map(m => {
-      const monthData = sectionSummary[st.name]?.[m];
-      return monthData ? Math.round(monthData.actual || 0) : 0;
+    const datasets = stages.map(st => {
+      const dataPoints = fyMonths.map(m => {
+        const monthData = sectionSummary[st.name]?.[m];
+        return monthData ? Math.round(monthData.actual || 0) : 0;
+      });
+      return {
+        label: st.name,
+        data: dataPoints,
+        backgroundColor: st.color,
+        borderRadius: 4
+      };
     });
-    return {
-      label: st.name,
-      data: dataPoints,
-      backgroundColor: st.color,
-      borderRadius: 4
-    };
-  });
 
-  charts.monthlySection = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: fyMonths,
-      datasets: datasets
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: true,
-          position: 'top',
-          labels: { color: '#9ca3af', font: { size: 10 } }
-        },
-        tooltip: {
-          mode: 'index',
-          intersect: false
-        }
+    charts.monthlySection = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: fyMonths,
+        datasets: datasets
       },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: '#9ca3af', font: { size: 10 } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { color: '#9ca3af', font: { size: 10 } }
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false
+          }
         },
-        y: {
-          grid: { color: 'rgba(255, 255, 255, 0.05)' },
-          ticks: { color: '#9ca3af', font: { size: 10 } }
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: { color: '#9ca3af', font: { size: 10 } }
+          },
+          y: {
+            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+            ticks: { color: '#9ca3af', font: { size: 10 } }
+          }
         }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.error('Error in renderMonthlySectionChart:', err);
+  }
 }
 
 function filterMonthlyTable() {
@@ -1172,32 +1255,41 @@ function renderQualityTab(quality) {
 function renderQualityChart(passed, failed) {
   const canvas = document.getElementById('qualityDonutChart');
   if (!canvas) return;
+  if (typeof Chart === 'undefined') {
+    console.warn('Chart.js not loaded, skipping quality chart');
+    return;
+  }
   const ctx = canvas.getContext('2d');
-  if (charts.quality) charts.quality.destroy();
+  if (!ctx) return;
+  try {
+    if (charts.quality) charts.quality.destroy();
 
-  const total = passed + failed;
-  const passPct = total > 0 ? Math.round((passed / total) * 100) : 100;
+    const total = passed + failed;
+    const passPct = total > 0 ? Math.round((passed / total) * 100) : 100;
 
-  charts.quality = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Passed Inspection', 'Failed Inspection'],
-      datasets: [{
-        data: [passed, failed],
-        backgroundColor: ['rgba(16, 185, 129, 0.85)', 'rgba(239, 68, 68, 0.85)'],
-        borderColor: ['#10b981', '#ef4444'],
-        borderWidth: 2,
-        cutout: '72%'
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false }
+    charts.quality = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Passed Inspection', 'Failed Inspection'],
+        datasets: [{
+          data: [passed, failed],
+          backgroundColor: ['rgba(16, 185, 129, 0.85)', 'rgba(239, 68, 68, 0.85)'],
+          borderColor: ['#10b981', '#ef4444'],
+          borderWidth: 2,
+          cutout: '72%'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    console.error('Error in renderQualityChart:', err);
+  }
 
   const legend = document.getElementById('qualityStatsLegend');
   if (legend) {
@@ -1338,11 +1430,13 @@ function switchTab(tabId, subAction) {
 // Data Lineage Modal
 // ---------------------------------------------------------------------------
 function openLineageModal() {
-  document.getElementById('lineageModal').classList.add('active');
+  const modal = document.getElementById('lineageModal');
+  if (modal) modal.classList.add('active');
 }
 
 function closeLineageModal() {
-  document.getElementById('lineageModal').classList.remove('active');
+  const modal = document.getElementById('lineageModal');
+  if (modal) modal.classList.remove('active');
 }
 
 function showMetricLineage(metricKey, event) {
@@ -1357,7 +1451,7 @@ function showMetricLineage(metricKey, event) {
 // ---------------------------------------------------------------------------
 async function sendChatMessage() {
   const input = document.getElementById('chatInput');
-  const question = input.value.trim();
+  const question = input ? input.value.trim() : '';
   if (!question) return;
 
   input.value = '';
@@ -1383,7 +1477,7 @@ async function sendChatMessage() {
 
 function askPreset(question) {
   switchTab('assistant');
-  document.getElementById('chatInput').value = question;
+  safeSetValue('chatInput', question);
   sendChatMessage();
 }
 
@@ -1434,14 +1528,14 @@ function removeLoadingBubble(id) {
 }
 
 function clearChat() {
-  document.getElementById('chatMessages').innerHTML = `
+  safeSetHtml('chatMessages', `
     <div class="message system-message">
       <div class="msg-avatar">🤖</div>
       <div class="msg-content">
         <p>Chat cleared. Ask me any question about your shop floor inventory, production output, or bottlenecks.</p>
       </div>
     </div>
-  `;
+  `);
 }
 
 function formatMarkdownText(text) {
@@ -1486,13 +1580,15 @@ function escapeHtml(str) {
 // File Upload & Modals (Single Ingestion Method)
 // ---------------------------------------------------------------------------
 function openUploadModal() {
-  document.getElementById('uploadModal').classList.add('active');
-  document.getElementById('uploadProgressWrap').style.display = 'none';
-  document.getElementById('uploadProgressBar').style.width = '0%';
+  const modal = document.getElementById('uploadModal');
+  if (modal) modal.classList.add('active');
+  safeSetStyle('uploadProgressWrap', 'display', 'none');
+  safeSetStyle('uploadProgressBar', 'width', '0%');
 }
 
 function closeUploadModal() {
-  document.getElementById('uploadModal').classList.remove('active');
+  const modal = document.getElementById('uploadModal');
+  if (modal) modal.classList.remove('active');
 }
 
 function setupDragAndDrop() {
@@ -1532,33 +1628,31 @@ function setSelectedFile(file) {
     return;
   }
   selectedFileToUpload = file;
-  document.getElementById('selectedFileInfo').style.display = 'flex';
-  document.getElementById('selectedFileName').textContent = file.name;
-  document.getElementById('selectedFileSize').textContent = `${(file.size / 1024).toFixed(1)} KB`;
-  document.getElementById('btnSubmitUpload').disabled = false;
+  safeSetStyle('selectedFileInfo', 'display', 'flex');
+  safeSetText('selectedFileName', file.name);
+  safeSetText('selectedFileSize', `${(file.size / 1024).toFixed(1)} KB`);
+  const btn = document.getElementById('btnSubmitUpload');
+  if (btn) btn.disabled = false;
 }
 
 async function submitUpload() {
   if (!selectedFileToUpload) return;
 
   const btn = document.getElementById('btnSubmitUpload');
-  btn.disabled = true;
+  if (btn) btn.disabled = true;
 
-  const progressWrap = document.getElementById('uploadProgressWrap');
-  const progressBar = document.getElementById('uploadProgressBar');
-  const statusText = document.getElementById('uploadStatusText');
-
-  progressWrap.style.display = 'block';
-  progressBar.style.width = '40%';
-  statusText.textContent = 'Uploading workbook to local factory server...';
+  safeSetStyle('uploadProgressWrap', 'display', 'block');
+  safeSetStyle('uploadProgressBar', 'width', '40%');
+  safeSetText('uploadStatusText', 'Uploading workbook to local factory server...');
 
   const formData = new FormData();
   formData.append('file', selectedFileToUpload);
-  formData.append('notes', document.getElementById('uploadNotes').value);
+  const notesEl = document.getElementById('uploadNotes');
+  formData.append('notes', notesEl ? notesEl.value : '');
 
   try {
-    progressBar.style.width = '70%';
-    statusText.textContent = 'Parsing 87 sheets & calculating operational metrics...';
+    safeSetStyle('uploadProgressBar', 'width', '70%');
+    safeSetText('uploadStatusText', 'Parsing 87 sheets & calculating operational metrics...');
 
     const res = await fetch('/api/upload', {
       method: 'POST',
@@ -1567,8 +1661,8 @@ async function submitUpload() {
 
     const data = await res.json();
     if (res.ok) {
-      progressBar.style.width = '100%';
-      statusText.textContent = 'Ingestion complete! Loading new snapshot...';
+      safeSetStyle('uploadProgressBar', 'width', '100%');
+      safeSetText('uploadStatusText', 'Ingestion complete! Loading new snapshot...');
       setTimeout(() => {
         closeUploadModal();
         currentSnapshotId = data.summary.snapshot_id;
@@ -1576,11 +1670,11 @@ async function submitUpload() {
       }, 700);
     } else {
       alert(`Upload failed: ${data.detail || 'Unknown error'}`);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
     }
   } catch (err) {
     alert(`Upload failed: ${err.message}`);
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -1588,15 +1682,18 @@ async function submitUpload() {
 // Gemini API Key Modal
 // ---------------------------------------------------------------------------
 function openApiKeyModal() {
-  document.getElementById('apiKeyModal').classList.add('active');
+  const modal = document.getElementById('apiKeyModal');
+  if (modal) modal.classList.add('active');
 }
 
 function closeApiKeyModal() {
-  document.getElementById('apiKeyModal').classList.remove('active');
+  const modal = document.getElementById('apiKeyModal');
+  if (modal) modal.classList.remove('active');
 }
 
 async function saveGeminiKey() {
-  const key = document.getElementById('inputGeminiKey').value.trim();
+  const input = document.getElementById('inputGeminiKey');
+  const key = input ? input.value.trim() : '';
   if (!key) {
     alert('Please enter a valid API key.');
     return;
