@@ -84,23 +84,51 @@ async def upload_workbook(
 @router.get("/insights/dashboard")
 def get_dashboard_insights(
     snapshot_id: Optional[int] = Query(None),
-    month: Optional[str] = Query(None)
+    month: Optional[str] = Query(None),
+    rating: Optional[str] = Query(None)
 ):
     engine = InsightsEngine(snapshot_id=snapshot_id)
-    return engine.get_dashboard_insights(month=month)
+    return engine.get_dashboard_insights(month=month, rating=rating)
+
+@router.get("/factory/material-readiness")
+def get_material_readiness(
+    snapshot_id: Optional[int] = Query(None),
+    rating: Optional[str] = Query("ALL")
+):
+    engine = InsightsEngine(snapshot_id=snapshot_id)
+    return engine._compute_material_readiness(rating=rating)
+
+@router.get("/factory/wip")
+def get_wip_bottlenecks(
+    snapshot_id: Optional[int] = Query(None),
+    month: Optional[str] = Query(None),
+    rating: Optional[str] = Query("ALL")
+):
+    engine = InsightsEngine(snapshot_id=snapshot_id)
+    return engine._compute_wip_and_accumulation(month=month, rating=rating)
+
+@router.get("/factory/outsourcing")
+def get_outsourcing(snapshot_id: Optional[int] = Query(None)):
+    engine = InsightsEngine(snapshot_id=snapshot_id)
+    return engine._compute_outsourcing_summary()
 
 @router.get("/inventory/finished-goods")
-def get_finished_goods(snapshot_id: Optional[int] = Query(None)):
+def get_finished_goods(
+    snapshot_id: Optional[int] = Query(None),
+    rating: Optional[str] = Query("ALL")
+):
     engine = InsightsEngine(snapshot_id=snapshot_id)
-    return engine._compute_finished_goods()
+    return engine._compute_finished_goods(rating=rating)
 
 @router.get("/bom/specifications")
-def get_bom_specifications(snapshot_id: Optional[int] = Query(None)):
+def get_bom_specifications(
+    snapshot_id: Optional[int] = Query(None),
+    rating: Optional[str] = Query("ALL")
+):
     engine = InsightsEngine(snapshot_id=snapshot_id)
-    return {"bom_specifications": engine._get_bom_specifications()}
+    return {"bom_specifications": engine._get_bom_specifications(rating=rating)}
 
 @router.get("/insights/trends")
-
 def get_trends(material_ids: Optional[str] = Query(None)):
     m_ids = None
     if material_ids:
@@ -112,13 +140,22 @@ def get_trends(material_ids: Optional[str] = Query(None)):
     return engine.get_time_series_trends(material_ids=m_ids)
 
 @router.get("/materials")
-def list_materials(snapshot_id: Optional[int] = Query(None)):
+def list_materials(
+    snapshot_id: Optional[int] = Query(None),
+    rating: Optional[str] = Query(None)
+):
     if snapshot_id is None:
         latest = query_one("SELECT id FROM snapshots ORDER BY id DESC LIMIT 1")
         snapshot_id = latest["id"] if latest else 0
 
+    where_clause = "WHERE sms.snapshot_id = ?"
+    params: List[Any] = [snapshot_id]
+    if rating and rating.upper() != "ALL":
+        where_clause += " AND m.rating = ?"
+        params.append(rating.upper())
+
     items = query_all(
-        """
+        f"""
         SELECT 
             m.id,
             m.rating,
@@ -135,9 +172,10 @@ def list_materials(snapshot_id: Optional[int] = Query(None)):
             sms.closing_balance
         FROM materials m
         LEFT JOIN stock_master_snapshots sms ON m.id = sms.material_id AND sms.snapshot_id = ?
+        {where_clause}
         ORDER BY m.rating, m.material_name
         """,
-        (snapshot_id,)
+        tuple(params)
     )
     return {"materials": items}
 

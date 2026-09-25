@@ -13,7 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 
 if __name__ == "__main__":
     print("=" * 65)
-    print(" ⚡ SAMTECH TRANSFORMER FACTORY INSIGHTS & Q&A APP")
+    print(" [SAMTECH] TRANSFORMER FACTORY INSIGHTS & Q&A APP")
     print(" Local server starting on: http://127.0.0.1:8000")
     print(" Drop incoming workbooks into: data/incoming/")
     print(" Press Ctrl+C to stop.")

@@ -6,37 +6,56 @@ from app.config import GEMINI_API_KEY, LLM_MODEL
 from app.db import query_all, query_one, get_db
 
 SCHEMA_PROMPT = """
-You are an expert SQL analyst for a transformer manufacturing factory.
-You have access to a local SQLite database with normalized operational data from the factory's Excel sheets.
+You are an expert SQL analyst for Samtech Transformer Factory.
+You have access to a local SQLite database with normalized operational data from the factory's Excel workbook.
+
+CRITICAL OPERATIONAL & BUSINESS CONTEXT:
+- TEMPORAL ANCHOR: The factory operational year is 2026 (Financial Year 2026-27). The current/active month in the workbook is September 2026 ('2026-09'). All dates and targets are set in 2026-2027. NEVER assume or refer to 2023 or any past year unless the user explicitly asks about it.
+- THE EXCEL WORKBOOK IS THE ONLY SOURCE OF TRUTH. The database is strictly READ-ONLY. Never attempt to INSERT, UPDATE, or DELETE data.
+- DO NOT FABRICATE REASONS: Never claim bottlenecks are due to "understaffing", "machine breakdown", or "operator error" unless an explicit remark in the workbook says so. Use data-backed phrases like: "The data shows 21 units accumulated between CCA and Tanking."
+- MANUFACTURING PROCESS FLOW:
+  1. HV WINDING (HV Coils)
+  2. LV WINDING (LV Coils)
+  3. CORE COIL ASSEMBLY (CCA)
+  4. TANKING (Assembly & Oil Filling)
+  5. TESTING (PROD_TESTING PASSED and PROD_TESTING FAILED)
+  6. PAINTING (Finishing)
+  7. DISPATCH (Shipped to customer)
+- RATINGS: 16KVA, 25KVA, 63KVA, 100KVA, 250KVA.
+- OUTSOURCING: The factory has both In-house production and external Outsourcing (e.g. 'STK_OUTSOURCED TR' and 'STK_OUTSOURCED CCA'). Do not merge outsourced stock with in-house production without clear labeling.
+- SEPARATE PRODUCTION FROM STOCK:
+  * PRODUCTION (period throughput, units produced): Query from 'production_entries' (or 'production_monthly_targets' for monthly targets/actuals).
+  * STOCK (warehouse closing balance on hand): Query from 'stock_master_snapshots' joined with 'materials'. Never sum warehouse stock balances and production output together!
 
 Database Tables:
 1. materials (id, rating, sheet_name, material_name, material_type, size, unit, min_reorder_level)
    - rating: '16KVA', '25KVA', '63KVA', '100KVA', '250KVA', or 'COMMON'
-   - material_name: e.g. 'HV Copper Wire', 'LV Copper Strip', 'Transformer Oil IS 335', 'Transformer Tank 63KVA'
+   - material_name: e.g. 'HV Copper Wire', 'LV Copper Strip', 'Transformer Oil IS 335', 'Transformer Tank 63KVA', 'HV COIL (FINISHED)', 'LV COIL (FINISHED)', 'CCA (FINISHED)', 'FINISHED TRANSFORMER', 'OUTSOURCED CCA', 'OUTSOURCED TRANSFORMER'
 
 2. stock_master_snapshots (id, snapshot_id, material_id, opening_balance, received_qty, rate, value, issued_qty, closing_balance)
-   - Contains latest rollup inventory counts for each material per snapshot.
+   - Latest inventory rollup ledger for each material per snapshot.
 
 3. stock_transactions (id, snapshot_id, material_id, s_no, date, opening_balance, received_qty, rate, value, supplier_name, invoice_no, issued_qty, issued_to_section, closing_balance, remarks)
-   - Granular ledger entries with dates, received_qty, issued_qty, supplier, invoice, and section issued to.
+   - Daily transactional ledger with dates (YYYY-MM-DD), receipts, issuances, suppliers, and sections.
 
 4. production_entries (id, snapshot_id, date, section, rating, units_produced)
-   - Daily production logs.
-   - section values: 'HV WINDING', 'LV WINDING', 'CORE COIL ASSEMBLY', 'TANKING', 'TESTING PASSED', 'TESTING FAILED', 'PAINTING', 'DISPATCH'
-   - rating values: '16KVA', '25KVA', '63KVA', '100KVA', '250KVA'
+   - Daily production logs (rows 3–367 of PROD_* sheets).
+   - section: 'HV WINDING', 'LV WINDING', 'CORE COIL ASSEMBLY', 'TANKING', 'TESTING PASSED', 'TESTING FAILED', 'PAINTING', 'DISPATCH'
+   - rating: '16KVA', '25KVA', '63KVA', '100KVA', '250KVA'
 
-5. consumption_norms (id, snapshot_id, rating, material_name, qty_per_transformer, unit)
-   - Standard BOM norms per transformer from the BASIC sheet.
+5. production_monthly_targets (id, snapshot_id, section, rating, month, target_units, actual_units, variance_units)
+   - 12-month FY targets & actuals from PRODUCTION MASTER.
+   - month format: 'Apr-26', 'May-26', 'Jun-26', 'Jul-26', 'Aug-26', 'Sep-26', 'Oct-26', 'Nov-26', 'Dec-26', 'Jan-27', 'Feb-27', 'Mar-27', 'YEARLY'
+   - section: 'HV WINDING', 'LV WINDING', 'CCA', 'TANKING', 'TESTING', 'PAINTING', 'DISPATCH'
 
-6. snapshots (id, filename, file_hash, uploaded_at, file_path, notes)
-   - Tracked uploads over time. Current/latest snapshot is MAX(id).
+6. bom_specifications (id, snapshot_id, rating, material_name, material_type, size, pieces_count, qty_per_coil, qty_per_transformer, unit)
+   - Standard engineering Bill of Materials (BOM) recipes from BASIC / CONSUMPTION sheets.
 
-CRITICAL OPERATIONAL RULES:
-- PRODUCTION COUNTS / OUTPUT (e.g. HV Winding count, LV Winding count, Tanking count):
-  MUST be queried from 'production_entries' (sections: 'HV WINDING', 'LV WINDING', 'CORE COIL ASSEMBLY', 'TANKING', 'TESTING PASSED', 'TESTING FAILED', 'PAINTING', 'DISPATCH').
-- STOCK / INVENTORY ON HAND:
-  Comes from 'stock_master_snapshots' / 'materials'.
-  Note that finished goods & assemblies (e.g. 'HV COIL (FINISHED)', 'LV COIL (FINISHED)', 'CCA (FINISHED)', 'FINISHED TRANSFORMER') represent units currently sitting in warehouse stock (closing balance), NOT the production output. Never sum finished stock balances into production counts.
+7. consumption_norms (id, snapshot_id, rating, material_name, qty_per_transformer, unit)
+   - Standard BOM norms per transformer.
+
+8. snapshots (id, filename, file_hash, uploaded_at, file_path, notes)
+   - Tracked workbook uploads. Current/latest snapshot is MAX(id).
 
 Instructions:
 - Write ONLY a valid SQLite SELECT query.
@@ -170,7 +189,9 @@ Write the exact SQLite query to answer this question.
 
     def _synthesize_answer_with_gemini(self, question: str, sql: str, results: List[Dict[str, Any]]) -> str:
         prompt = f"""
-You are the factory manager's operational assistant.
+You are the factory manager's operational assistant for Samtech Transformer Factory.
+TEMPORAL CONTEXT: The operating year is 2026 (FY 2026-27), with the active production month being September 2026. Do NOT mention or assume 2023.
+
 The user asked: "{question}"
 We ran this SQL query:
 {sql}
@@ -178,10 +199,11 @@ We ran this SQL query:
 Database results (JSON):
 {json.dumps(results[:30], indent=2)}
 
-Synthesize a clear, concise, direct answer for the factory owner.
-- Include the exact numbers, ratings, units, and material names.
+Synthesize a clear, concise, direct answer for the factory owner:
+- State exact numbers, ratings, units, and material names.
 - If there are multiple items, format with a brief markdown table or bullet points.
-- Do not make up any numbers; ground your response strictly in the query results.
+- Strictly ground your response in the query results. Do NOT invent causes (e.g. do not invent "understaffed" or "machine broke down" unless the data explicitly says so).
+- Clearly separate production counts (units produced) from stock counts (inventory on hand in warehouse).
 """
         response = self.client.models.generate_content(
             model=LLM_MODEL,
